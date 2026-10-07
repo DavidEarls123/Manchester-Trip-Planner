@@ -2,7 +2,9 @@ const $ = (id) => document.getElementById(id);
 const PREFS_KEY = 'mutp-prefs';
 const DEFAULT_PREFS = { home: '', man: 'MAN', currency: 'GBP', direct: false, before: 3, after: 3 };
 
+const PIN_KEY = 'mutp-pin';
 const state = {
+  pinRequired: false,
   fixtures: [],
   filter: 'all',
   fixture: null, // selected fixture (or custom trip object)
@@ -92,6 +94,7 @@ async function loadFixtures() {
     badge.textContent = cfg.mode === 'live' ? 'Live prices' : 'Demo prices';
     badge.className = `badge ${cfg.mode}`;
     badge.title = cfg.mode === 'live' ? 'Prices from Google Flights via SerpApi' : 'No SERPAPI_KEY set: prices are made up';
+    state.pinRequired = !!cfg.pinRequired;
     state.fixtures = Array.isArray(fx) ? fx : [];
   } catch (e) {
     state.fixtures = [];
@@ -313,6 +316,50 @@ function updateCost() {
 
 // ---------- search ----------
 
+function storedPin() {
+  try {
+    return localStorage.getItem(PIN_KEY) || '';
+  } catch {
+    return state.pin || '';
+  }
+}
+function storePin(pin) {
+  state.pin = pin;
+  try {
+    pin ? localStorage.setItem(PIN_KEY, pin) : localStorage.removeItem(PIN_KEY);
+  } catch {
+    /* kept in memory for this visit */
+  }
+}
+// Returns the PIN to send, asking once per device. null = user cancelled.
+function pinForRequest(force) {
+  if (!state.pinRequired) return '';
+  let pin = force ? '' : storedPin();
+  if (!pin) {
+    pin = (prompt(force ? 'Wrong PIN, try again:' : 'Enter your PIN (asked once per device):') || '').trim();
+    if (!pin) return null;
+    storePin(pin);
+  }
+  return pin;
+}
+
+async function postSearch(body, retry = false) {
+  const pin = pinForRequest(retry);
+  if (pin == null) throw new Error('A PIN is needed to search flights.');
+  const res = await fetch('/api/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Pin': pin },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (res.status === 401 && data.pin) {
+    storePin('');
+    if (!retry) return postSearch(body, true);
+  }
+  if (!res.ok) throw new Error(data.error || 'Search failed');
+  return data;
+}
+
 function legPayload(leg) {
   const v = (k) => $(`${leg}-${k}`).value || undefined;
   return {
@@ -346,10 +393,7 @@ $('trip').onsubmit = async (e) => {
   out.classList.remove('hidden');
   out.innerHTML = '<div class="card"><p class="muted">Searching flights…</p></div>';
   try {
-    const res = await fetch('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Search failed');
-    renderResults(data, body);
+    renderResults(await postSearch(body), body);
   } catch (err) {
     out.innerHTML = `<div class="card error">${esc(err.message)}</div>`;
   } finally {

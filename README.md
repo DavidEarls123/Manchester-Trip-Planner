@@ -21,23 +21,41 @@ A small personal web app for planning flights to Manchester United games.
 - **Direct only** filter and GBP/EUR/USD prices.
 - A **View** link on every flight opens Google Flights so you can book.
 
-## Running it
+## Put it online (phone + PC, nothing to install)
 
-Needs Node.js 18+ and no `npm install`; the app has no dependencies.
+The app is set up for [Vercel](https://vercel.com)'s free plan. You do all of this in a web browser, once:
 
-```bash
-cp .env.example .env     # then add your SerpApi key (see below)
-npm start                # → http://localhost:3000
-```
+1. **Get a flight-price key.** Sign up for the free plan at [SerpApi](https://serpapi.com/users/sign_up) and copy your **API key** from the dashboard.
+2. **Sign up to Vercel** at [vercel.com/signup](https://vercel.com/signup) and choose **Continue with GitHub** (Hobby plan, free).
+3. Click **Add New… → Project** and **Import** `Manchester-Trip-Planner`. If it isn't listed, click *Adjust GitHub App Permissions* and give Vercel access to the repo.
+4. On the configure screen, leave everything as it is, but open **Environment Variables** and add two variables:
+   - `SERPAPI_KEY`: your SerpApi key.
+   - `APP_PIN`: any PIN you like. Each device asks for it once, so strangers who find your link can't use up your searches.
+5. Click **Deploy**. About a minute later you get a link like `https://manchester-trip-planner.vercel.app`.
+6. **On your phone**, open the link and add it to your home screen so it opens like an app:
+   - iPhone: Safari → Share → *Add to Home Screen*.
+   - Android: Chrome → ⋮ → *Add to Home screen*.
 
-### Real prices: SerpApi key
+Any change pushed to the repo goes live automatically.
+If you change an environment variable later, apply it in Vercel with **Deployments → ⋯ → Redeploy**.
+
+Your saved airports are remembered per device, so set them once on your phone and once on your PC.
+
+### Prices and search usage
 
 Live prices come from Google Flights through [SerpApi](https://serpapi.com/google-flights-api).
-Sign up for the free plan, copy your API key into `.env` as `SERPAPI_KEY=...`, and restart.
+Without `SERPAPI_KEY` the app runs in **demo mode** with made-up prices, shown by the "Demo prices" badge.
 
-Without a key the app runs in **demo mode** with made-up prices (shown by the "Demo prices" badge), so you can try it out.
+Each day you select uses one search per direction. Repeat searches are cached for a while, which saves your quota.
 
-Each day you select uses one search per direction. Results are cached for 3 hours (`FLIGHT_CACHE_MINUTES`), so going back and forth costs nothing.
+### Running it on your own computer instead (optional)
+
+Needs Node.js 18+, with no `npm install`:
+
+```bash
+cp .env.example .env     # add SERPAPI_KEY (and optionally APP_PIN)
+npm start                # → http://localhost:3000
+```
 
 ### Fixtures
 
