@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Man Utd Trip Planner</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <h1>Man Utd Trip Planner</h1>
+      <span id="mode-badge" class="badge"></span>
+      <button id="settings-btn" class="ghost" type="button">⚙ My airports</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Settings -->
+    <section id="settings" class="card hidden">
+      <h2>My preferences</h2>
+      <p class="muted">Saved in this browser. These are pre-filled on every search, and you can change them per trip.</p>
+      <div class="grid2">
+        <label>Home airport(s) — where you fly from
+          <input id="pref-home" placeholder="e.g. DUB or DUB,ORK" />
+        </label>
+        <label>Preferred airport(s) for Old Trafford
+          <input id="pref-man" placeholder="e.g. MAN or MAN,LPL" />
+        </label>
+        <label>Currency
+          <select id="pref-currency">
+            <option>GBP</option><option>EUR</option><option>USD</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="pref-direct" /> Direct flights only by default</label>
+        <label>Land at least this many hours before kick-off
+          <input id="pref-before" type="number" min="0" max="12" step="0.5" />
+        </label>
+        <label>Leave at least this many hours after kick-off (return)
+          <input id="pref-after" type="number" min="2" max="12" step="0.5" />
+        </label>
+      </div>
+      <div class="row-end"><button id="settings-save" type="button">Save</button></div>
+    </section>
+
+    <!-- Step 1: fixture -->
+    <section class="card">
+      <div class="section-head">
+        <h2><span class="step">1</span> Pick a fixture</h2>
+        <div class="seg" id="fixture-filter">
+          <button type="button" data-f="all" class="on">All</button>
+          <button type="button" data-f="home">Home</button>
+          <button type="button" data-f="away">Away</button>
+        </div>
+      </div>
+      <div id="fixtures" class="fixtures"><p class="muted">Loading fixtures…</p></div>
+      <button id="custom-trip" class="ghost small" type="button">+ Not listed (cup / European game)? Plan a custom trip</button>
+    </section>
+
+    <!-- Step 2: trip -->
+    <form id="trip" class="card hidden" autocomplete="off">
+      <h2><span class="step">2</span> When and where</h2>
+      <div id="trip-summary" class="trip-summary"></div>
+
+      <div id="custom-fields" class="grid2 hidden">
+        <label>Match / event name <input id="custom-name" placeholder="e.g. Europa League away" /></label>
+        <label>Match date <input id="custom-date" type="date" /></label>
+        <label>Kick-off (UK time, optional) <input id="custom-time" type="time" /></label>
+        <label>Nearest airport(s) <input id="custom-airports" placeholder="e.g. MAN" /></label>
+      </div>
+
+      <div class="legs">
+        <fieldset class="leg">
+          <legend>✈ Going out</legend>
+          <div class="field-label">Day(s) to fly <span class="muted">(select one or more)</span></div>
+          <div class="chips" id="out-dates"></div>
+          <div class="grid2">
+            <label>From <input id="out-from" /></label>
+            <label>To <input id="out-to" /><span class="chips mini" id="out-to-suggest"></span></label>
+            <label>Depart after <input id="out-depart-after" type="time" /></label>
+            <label>Depart before <input id="out-depart-before" type="time" /></label>
+            <label>Arrive after <input id="out-arrive-after" type="time" /></label>
+            <label>Arrive by <input id="out-arrive-by" type="time" /></label>
+          </div>
+          <button type="button" class="ghost small" id="out-ko">Land in time for kick-off</button>
+          <button type="button" class="ghost small" data-clear="out">Clear times</button>
+        </fieldset>
+
+        <fieldset class="leg">
+          <legend>
+            <label class="check inline"><input type="checkbox" id="ret-on" checked /> ✈ Coming home</label>
+          </legend>
+          <div id="ret-body">
+            <div class="field-label">Day(s) to fly <span class="muted">(select one or more)</span></div>
+            <div class="chips" id="ret-dates"></div>
+            <div class="grid2">
+              <label>From
+                <input id="ret-from" />
+                <span class="check small"><input type="checkbox" id="ret-from-same" checked /> same airport I flew into</span>
+              </label>
+              <label>To
+                <input id="ret-to" />
+                <span class="check small"><input type="checkbox" id="ret-to-same" checked /> same airport I flew out of</span>
+              </label>
+              <label>Depart after <input id="ret-depart-after" type="time" /></label>
+              <label>Depart before <input id="ret-depart-before" type="time" /></label>
+              <label>Arrive after <input id="ret-arrive-after" type="time" /></label>
+              <label>Arrive by <input id="ret-arrive-by" type="time" /></label>
+            </div>
+            <button type="button" class="ghost small" id="ret-ft">Leave after full time</button>
+            <button type="button" class="ghost small" data-clear="ret">Clear times</button>
+          </div>
+        </fieldset>
+      </div>
+
+      <div class="row-between">
+        <div class="opts">
+          <label class="check"><input type="checkbox" id="direct" /> Direct only</label>
+          <label class="inline-select">Currency
+            <select id="currency"><option>GBP</option><option>EUR</option><option>USD</option></select>
+          </label>
+        </div>
+        <button type="submit" id="search-btn" class="primary">Find flights</button>
+      </div>
+      <p class="muted small" id="search-cost"></p>
+    </form>
+
+    <!-- Step 3: results -->
+    <section id="results" class="hidden"></section>
+  </main>
+
+  <footer class="wrap muted small">
+    Fixtures from <a href="https://github.com/openfootball/football.json" target="_blank" rel="noopener">openfootball</a> (kick-off times UK, subject to TV changes).
+    Prices from Google Flights via SerpApi, one-way fares per leg; always confirm on the airline's site before booking.
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
