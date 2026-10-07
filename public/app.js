@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const PREFS_KEY = 'mutp-prefs';
-const DEFAULT_PREFS = { home: '', man: 'MAN', currency: 'GBP', direct: false, before: 3, after: 3 };
+// from/to are ranked airport lists: index 0 is the favourite.
+const DEFAULT_PREFS = { from: [], to: ['MAN', 'LPL'], currency: 'GBP', direct: false, before: 3, after: 3, sort: 'airports' };
 
 const PIN_KEY = 'mutp-pin';
 const state = {
@@ -9,16 +10,42 @@ const state = {
   filter: 'all',
   fixture: null, // selected fixture (or custom trip object)
   custom: false,
+  ap: {}, // per-trip airport chips: { 'out-from': [{ code, on }], ... }
+  draft: { from: [], to: [] }, // settings lists being edited
+  last: null, // last search { data, req } for re-sorting
 };
+
+// Names for common airports, shown next to the codes. Unknown codes still work.
+const AIRPORT_NAMES = {
+  DUB: 'Dublin', ORK: 'Cork', SNN: 'Shannon', NOC: 'Knock', KIR: 'Kerry', BFS: 'Belfast Intl', BHD: 'Belfast City',
+  LDY: 'Derry', MAN: 'Manchester', LPL: 'Liverpool', LBA: 'Leeds Bradford', NCL: 'Newcastle', MME: 'Teesside',
+  HUY: 'Humberside', EMA: 'East Midlands', BHX: 'Birmingham', LHR: 'Heathrow', LGW: 'Gatwick', STN: 'Stansted',
+  LTN: 'Luton', LCY: 'London City', SEN: 'Southend', BRS: 'Bristol', CWL: 'Cardiff', SOU: 'Southampton',
+  BOH: 'Bournemouth', NWI: 'Norwich', EXT: 'Exeter', NQY: 'Newquay', EDI: 'Edinburgh', GLA: 'Glasgow',
+  PIK: 'Glasgow Prestwick', ABZ: 'Aberdeen', INV: 'Inverness', IOM: 'Isle of Man', JER: 'Jersey', GCI: 'Guernsey',
+  AMS: 'Amsterdam', CDG: 'Paris CDG', BRU: 'Brussels', CPH: 'Copenhagen', OSL: 'Oslo', ARN: 'Stockholm',
+  KEF: 'Reykjavik', MAD: 'Madrid', BCN: 'Barcelona', AGP: 'Malaga', ALC: 'Alicante', FAO: 'Faro', LIS: 'Lisbon',
+  OPO: 'Porto', FCO: 'Rome', MXP: 'Milan', MUC: 'Munich', FRA: 'Frankfurt', BER: 'Berlin', DUS: 'Dusseldorf',
+  ZRH: 'Zurich', GVA: 'Geneva', VIE: 'Vienna', WAW: 'Warsaw', KRK: 'Krakow', PRG: 'Prague', BUD: 'Budapest',
+  ATH: 'Athens', IST: 'Istanbul', JFK: 'New York JFK', EWR: 'Newark', BOS: 'Boston', ORD: 'Chicago',
+};
+const apName = (c) => AIRPORT_NAMES[c] || '';
 
 // ---------- prefs ----------
 
 function loadPrefs() {
+  let saved = {};
   try {
-    return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+    saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
   } catch {
-    return { ...DEFAULT_PREFS };
+    /* blocked storage: use defaults */
   }
+  // Older versions stored comma-separated strings.
+  if (saved.home != null && !saved.from) saved.from = codes(saved.home);
+  if (saved.man != null && !saved.to) saved.to = codes(saved.man);
+  delete saved.home;
+  delete saved.man;
+  return { ...DEFAULT_PREFS, ...saved };
 }
 function savePrefs(p) {
   try {
@@ -30,8 +57,9 @@ function savePrefs(p) {
 let prefs = loadPrefs();
 
 function fillSettings() {
-  $('pref-home').value = prefs.home;
-  $('pref-man').value = prefs.man;
+  state.draft = { from: [...prefs.from], to: [...prefs.to] };
+  renderPrefList('from');
+  renderPrefList('to');
   $('pref-currency').value = prefs.currency;
   $('pref-direct').checked = prefs.direct;
   $('pref-before').value = prefs.before;
@@ -43,9 +71,16 @@ $('settings-btn').onclick = () => {
   $('settings').classList.toggle('hidden');
 };
 $('settings-save').onclick = () => {
+  addFromInput('from');
+  addFromInput('to');
+  if (!state.draft.from.length) {
+    $('pref-from-add').focus();
+    return;
+  }
   prefs = {
-    home: codes($('pref-home').value).join(','),
-    man: codes($('pref-man').value).join(',') || 'MAN',
+    ...prefs,
+    from: [...state.draft.from],
+    to: state.draft.to.length ? [...state.draft.to] : ['MAN'],
     currency: $('pref-currency').value,
     direct: $('pref-direct').checked,
     before: Number($('pref-before').value) || 0,
@@ -55,6 +90,66 @@ $('settings-save').onclick = () => {
   $('settings').classList.add('hidden');
   if (state.fixture) openTrip(state.fixture);
 };
+
+// ---------- ranked airport lists (settings) ----------
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function renderPrefList(which) {
+  const list = state.draft[which];
+  const el = $(`pref-${which}-list`);
+  if (!list.length) {
+    el.innerHTML = `<li class="ap-empty muted">${which === 'from' ? 'Add the airport you usually fly from.' : 'Add an airport.'}</li>`;
+    return;
+  }
+  el.innerHTML = list
+    .map(
+      (c, i) => `
+      <li>
+        <span class="ap-rank">${ordinal(i + 1)}</span>
+        <span class="ap-name"><b>${esc(c)}</b> <span class="muted">${esc(apName(c))}</span></span>
+        <span class="ap-btns">
+          <button type="button" class="icon" data-move="-1" data-i="${i}" aria-label="Move ${c} up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button type="button" class="icon" data-move="1" data-i="${i}" aria-label="Move ${c} down" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+          <button type="button" class="icon" data-remove="${i}" aria-label="Remove ${c}">✕</button>
+        </span>
+      </li>`,
+    )
+    .join('');
+}
+
+for (const which of ['from', 'to']) {
+  $(`pref-${which}-list`).onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const list = state.draft[which];
+    if (b.dataset.remove != null) list.splice(Number(b.dataset.remove), 1);
+    if (b.dataset.move != null) {
+      const i = Number(b.dataset.i);
+      const j = i + Number(b.dataset.move);
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    renderPrefList(which);
+  };
+  $(`pref-${which}-add`).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addFromInput(which);
+    }
+  });
+}
+document.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => addFromInput(b.dataset.add.replace('pref-', ''))));
+
+function addFromInput(which) {
+  const input = $(`pref-${which}-add`);
+  for (const c of codes(input.value)) if (!state.draft[which].includes(c)) state.draft[which].push(c);
+  input.value = '';
+  renderPrefList(which);
+}
 
 // ---------- helpers ----------
 
@@ -100,7 +195,7 @@ async function loadFixtures() {
     state.fixtures = [];
   }
   renderFixtures();
-  if (!prefs.home) {
+  if (!prefs.from.length) {
     fillSettings();
     $('settings').classList.remove('hidden');
   }
@@ -149,7 +244,7 @@ $('custom-trip').onclick = () => {
   $('custom-name').value = '';
   $('custom-date').value = date;
   $('custom-time').value = '';
-  $('custom-airports').value = prefs.man;
+  $('custom-airports').value = prefs.to.join(', ');
   openTrip(customFixture());
 };
 
@@ -165,7 +260,7 @@ function customFixture() {
     isHome: false,
     venue: '',
     city: '',
-    airports: airports.length ? airports : codes(prefs.man),
+    airports: airports.length ? airports : [...prefs.to],
   };
 }
 ['custom-name', 'custom-date', 'custom-time', 'custom-airports'].forEach((id) =>
@@ -173,17 +268,19 @@ function customFixture() {
     state.fixture = customFixture();
     renderDates(true);
     renderSummary();
-    $('out-to').value = state.fixture.airports.join(',');
-    syncReturn();
+    state.ap['out-to'] = chipList(state.fixture.airports);
+    renderAirports();
   }),
 );
 
 // ---------- trip form ----------
 
+// Home games use your ranked list; away games the ground's airports, closest first.
 function arrivalAirports(f) {
-  if (f.isHome) return codes(prefs.man).length ? codes(prefs.man) : f.airports;
-  return f.airports.slice(0, 1);
+  if (f.isHome && !f.custom) return prefs.to.length ? prefs.to : f.airports;
+  return f.airports;
 }
+const chipList = (list) => list.map((code) => ({ code, on: true }));
 
 function openTrip(f) {
   state.fixture = f;
@@ -192,8 +289,12 @@ function openTrip(f) {
   $('trip').classList.remove('hidden');
   $('results').classList.add('hidden');
 
-  $('out-from').value = prefs.home;
-  $('out-to').value = arrivalAirports(f).join(',');
+  state.ap = {
+    'out-from': chipList(prefs.from),
+    'out-to': chipList(arrivalAirports(f)),
+    'ret-from': [],
+    'ret-to': [],
+  };
   $('direct').checked = prefs.direct;
   $('currency').value = prefs.currency;
   $('ret-on').checked = true;
@@ -204,7 +305,7 @@ function openTrip(f) {
 
   renderSummary();
   renderDates(true);
-  syncReturn();
+  renderAirports();
   $('trip').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -215,19 +316,62 @@ function renderSummary() {
     <b>${f.custom ? esc(f.opponent) : `${esc(f.home)} v ${esc(f.away)}`}</b>
     <span>${esc(niceDate(f.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}, ${esc(ko)}</span>
     ${f.venue ? `<span class="muted">${esc(f.venue)}${f.city ? ', ' + esc(f.city) : ''}, nearby airports: ${esc(f.airports.join(', '))}</span>` : ''}`;
-
-  const sug = f.isHome ? [...new Set([...codes(prefs.man), ...f.airports])] : f.airports;
-  $('out-to-suggest').innerHTML = sug.map((a) => `<button type="button" class="chip" data-code="${a}">${a}</button>`).join('');
 }
 
-$('out-to-suggest').onclick = (e) => {
-  const b = e.target.closest('[data-code]');
-  if (!b) return;
-  const cur = codes($('out-to').value);
-  const code = b.dataset.code;
-  $('out-to').value = (cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code]).join(',');
-  syncReturn();
-};
+// The return mirrors the outbound airports while the "same airports" boxes are ticked.
+function apList(id) {
+  if (id === 'ret-from' && $('ret-from-same').checked) return state.ap['out-to'];
+  if (id === 'ret-to' && $('ret-to-same').checked) return state.ap['out-from'];
+  return state.ap[id];
+}
+const onCodes = (id) => (apList(id) || []).filter((a) => a.on).map((a) => a.code);
+
+function renderAirports() {
+  for (const id of ['out-from', 'out-to', 'ret-from', 'ret-to']) {
+    const list = apList(id) || [];
+    const mirrored = apList(id) !== state.ap[id];
+    let n = 0;
+    const chips = list
+      .map((a) => {
+        const rank = a.on ? ++n : null;
+        return `<button type="button" class="chip ap ${a.on ? 'on' : 'off'}" data-code="${a.code}" ${mirrored ? 'disabled' : ''}
+          aria-pressed="${a.on}" title="${esc(apName(a.code) || a.code)}${a.on ? '' : ' (left out)'}">
+          ${rank ? `<span class="ap-num">${rank}</span>` : ''}<b>${a.code}</b>${apName(a.code) ? `<small>${esc(apName(a.code))}</small>` : ''}</button>`;
+      })
+      .join('');
+    const add = mirrored
+      ? ''
+      : `<input class="ap-plus" data-for="${id}" maxlength="3" placeholder="+ add" aria-label="Add an airport for this trip" />`;
+    $(id).innerHTML = chips + add;
+  }
+}
+
+for (const id of ['out-from', 'out-to', 'ret-from', 'ret-to']) {
+  $(id).addEventListener('click', (e) => {
+    const b = e.target.closest('.chip.ap');
+    if (!b || b.disabled) return;
+    const a = state.ap[id].find((x) => x.code === b.dataset.code);
+    if (a.on && state.ap[id].filter((x) => x.on).length === 1) return notice('Keep at least one airport selected.');
+    a.on = !a.on;
+    renderAirports();
+  });
+  const addTyped = (input) => {
+    const list = state.ap[id];
+    for (const c of codes(input.value)) {
+      const hit = list.find((x) => x.code === c);
+      hit ? (hit.on = true) : list.push({ code: c, on: true });
+    }
+    renderAirports();
+  };
+  $(id).addEventListener('change', (e) => e.target.matches('.ap-plus') && addTyped(e.target));
+  $(id).addEventListener('keydown', (e) => {
+    if (e.target.matches('.ap-plus') && e.key === 'Enter') {
+      e.preventDefault();
+      addTyped(e.target);
+      $(id).querySelector('.ap-plus')?.focus();
+    }
+  });
+}
 
 function dateChips(container, offsets, selected) {
   const f = state.fixture;
@@ -269,16 +413,13 @@ for (const id of ['out-dates', 'ret-dates']) {
 
 const selectedDates = (id) => [...$(id).querySelectorAll('.chip.on')].map((b) => b.dataset.date);
 
-function syncReturn() {
-  const fromSame = $('ret-from-same').checked;
-  const toSame = $('ret-to-same').checked;
-  if (fromSame) $('ret-from').value = $('out-to').value;
-  if (toSame) $('ret-to').value = $('out-from').value;
-  $('ret-from').disabled = fromSame;
-  $('ret-to').disabled = toSame;
+// Unticking "same airports" starts the return list as a copy you can then change.
+for (const [box, id, src] of [['ret-from-same', 'ret-from', 'out-to'], ['ret-to-same', 'ret-to', 'out-from']]) {
+  $(box).addEventListener('change', () => {
+    if (!$(box).checked) state.ap[id] = state.ap[src].map((a) => ({ ...a }));
+    renderAirports();
+  });
 }
-['out-from', 'out-to'].forEach((id) => $(id).addEventListener('input', syncReturn));
-['ret-from-same', 'ret-to-same'].forEach((id) => $(id).addEventListener('change', syncReturn));
 
 $('ret-on').onchange = () => {
   $('ret-body').classList.toggle('disabled', !$('ret-on').checked);
@@ -321,7 +462,7 @@ function notice(msg) {
 
 function updateCost() {
   const n = selectedDates('out-dates').length + ($('ret-on').checked ? selectedDates('ret-dates').length : 0);
-  $('search-cost').textContent = `${n} search${n === 1 ? '' : 'es'} (one per day per direction). Repeat searches are cached.`;
+  $('search-cost').textContent = `${n} search${n === 1 ? '' : 'es'} (one per day per direction). Numbers show your airport order; tap an airport to leave it out.`;
 }
 
 // ---------- search ----------
@@ -373,8 +514,8 @@ async function postSearch(body, retry = false) {
 function legPayload(leg) {
   const v = (k) => $(`${leg}-${k}`).value || undefined;
   return {
-    from: codes($(`${leg}-from`).value),
-    to: codes($(`${leg}-to`).value),
+    from: onCodes(`${leg}-from`),
+    to: onCodes(`${leg}-to`),
     dates: selectedDates(`${leg}-dates`),
     departAfter: v('depart-after'),
     departBefore: v('depart-before'),
@@ -385,7 +526,6 @@ function legPayload(leg) {
 
 $('trip').onsubmit = async (e) => {
   e.preventDefault();
-  syncReturn();
   const body = {
     outbound: legPayload('out'),
     inbound: $('ret-on').checked ? legPayload('ret') : null,
@@ -393,8 +533,8 @@ $('trip').onsubmit = async (e) => {
     currency: $('currency').value,
   };
   if (!body.outbound.from.length) {
-    notice('Set your home airport first (⚙ My airports), or type one in "From".');
-    $('out-from').focus();
+    notice('Add the airport you fly from: tap ⚙ My airports, or type a code in "+ add" under From.');
+    $('out-from').querySelector('.ap-plus')?.focus();
     return;
   }
   const btn = $('search-btn');
@@ -405,6 +545,7 @@ $('trip').onsubmit = async (e) => {
   out.innerHTML = '<div class="card"><p class="muted">Searching flights…</p></div>';
   try {
     renderResults(await postSearch(body), body);
+    $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     out.innerHTML = `<div class="card error">${esc(err.message)}</div>`;
   } finally {
@@ -419,14 +560,21 @@ function googleLink(f) {
   return `https://www.google.com/travel/flights?q=${encodeURIComponent(`one way flights from ${f.from} to ${f.to} on ${f.date}`)}&curr=${state.currency}`;
 }
 
-function flightRow(f, cur) {
+// Airport code with its place in your list (only when you searched more than one).
+function apTag(code, list) {
+  const i = list.indexOf(code);
+  if (list.length < 2 || i < 0) return `<b>${esc(code)}</b>`;
+  return `<b class="${i === 0 ? 'ap-first' : ''}">${esc(code)}</b><span class="ap-pos" title="Your ${ordinal(i + 1)} choice">${i + 1}</span>`;
+}
+
+function flightRow(f, cur, leg) {
   const nextDay = f.arriveMinutes >= 1440 ? '<sup>+1</sup>' : '';
   return `
     <div class="flight">
       <div class="f-when">
         <div class="f-date">${esc(niceDate(f.date))}</div>
         <div class="f-times"><b>${esc(f.departTime)}</b> → <b>${esc(f.arriveTime)}</b>${nextDay}</div>
-        <div class="muted small">${esc(f.from)} → ${esc(f.to)} · ${dur(f.durationMinutes)} · ${f.stops ? `${f.stops} stop${f.stops > 1 ? 's' : ''}` : 'Direct'}</div>
+        <div class="muted small">${apTag(f.from, leg.from)} → ${apTag(f.to, leg.to)} · ${dur(f.durationMinutes)} · ${f.stops ? `${f.stops} stop${f.stops > 1 ? 's' : ''}` : 'Direct'}</div>
       </div>
       <div class="f-airline">
         ${f.airlineLogo ? `<img src="${esc(f.airlineLogo)}" alt="" width="22" height="22" />` : ''}
@@ -437,39 +585,77 @@ function flightRow(f, cur) {
     </div>`;
 }
 
-function legSection(title, leg, cur, limit = 12) {
+// Same order as the server: airport preference first (when chosen), then price.
+function sortFlights(list, by) {
+  return [...list].sort(
+    (a, b) =>
+      (by === 'airports' ? a.rank - b.rank : 0) ||
+      (a.price ?? Infinity) - (b.price ?? Infinity) ||
+      a.stops - b.stops ||
+      a.durationMinutes - b.durationMinutes,
+  );
+}
+
+function legSection(title, leg, legReq, cur, by, limit = 12) {
   if (!leg) return '';
   const errs = leg.errors.length ? `<p class="error small">${leg.errors.map(esc).join('<br>')}</p>` : '';
   const links = leg.links.length
     ? `<p class="small">Open in Google Flights: ${leg.links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(niceDate(l.date))}</a>`).join(' · ')}</p>`
     : '';
   if (!leg.flights.length) return `<div class="card"><h3>${title}</h3>${errs}<p class="muted">No flights match those days, airports and times. Try widening the time window or adding another airport.</p>${links}</div>`;
-  const rows = leg.flights.map((f) => flightRow(f, cur));
+  const rows = sortFlights(leg.flights, by).map((f) => flightRow(f, cur, legReq));
   const more = rows.length > limit ? `<details><summary>Show ${rows.length - limit} more</summary>${rows.slice(limit).join('')}</details>` : '';
-  return `<div class="card"><h3>${title} <span class="muted small">${leg.flights.length} option${leg.flights.length === 1 ? '' : 's'}, cheapest first</span></h3>${errs}${rows.slice(0, limit).join('')}${more}${links}</div>`;
+  const order = by === 'airports' ? 'your airport order, then price' : 'cheapest first';
+  return `<div class="card"><h3>${title} <span class="muted small">${leg.flights.length} option${leg.flights.length === 1 ? '' : 's'}, ${order}</span></h3>${errs}${rows.slice(0, limit).join('')}${more}${links}</div>`;
+}
+
+function sortSwitch(by) {
+  return `<div class="seg" id="sort-switch" role="group" aria-label="Sort results">
+    <button type="button" data-sort="airports" class="${by === 'airports' ? 'on' : ''}">My airport order</button>
+    <button type="button" data-sort="price" class="${by === 'price' ? 'on' : ''}">Cheapest</button>
+  </div>`;
 }
 
 function renderResults(data, req) {
+  state.last = { data, req };
   state.currency = data.currency;
   const cur = data.currency;
+  const by = prefs.sort === 'price' ? 'price' : 'airports';
   const demo = data.mode === 'demo' ? '<div class="card warn">Demo mode: these prices are made up. Add your SerpApi key as <code>SERPAPI_KEY</code> to get real Google Flights prices.</div>' : '';
+  const head = `<div class="results-head"><h2><span class="step">3</span> Flights</h2>${sortSwitch(by)}</div>`;
+
   let trips = '';
   if (req.inbound) {
-    trips = data.trips.length
-      ? `<div class="card best"><h3>Best trips <span class="muted small">outbound + return, cheapest total first</span></h3>
-          ${data.trips
+    const list = data.trips[by];
+    const cheapest = data.trips.price[0];
+    const saving = by === 'airports' && list.length && cheapest ? list[0].total - cheapest.total : 0;
+    const tip = saving > 0
+      ? `<p class="tip">Cheapest overall is <b>${money(cheapest.total, cur)}</b> via ${esc(cheapest.outbound.from)} → ${esc(cheapest.outbound.to)} and ${esc(cheapest.inbound.from)} → ${esc(cheapest.inbound.to)}, ${money(saving, cur)} less than your top pick. <button type="button" class="link" data-sort="price">Show cheapest first</button></p>`
+      : '';
+    const sub = by === 'airports' ? 'your airports first, then cheapest total' : 'cheapest total first';
+    trips = list.length
+      ? `<div class="card best"><h3>Best trips <span class="muted small">${sub}</span></h3>${tip}
+          ${list
             .map(
               (t, i) => `
             <div class="trip ${i === 0 ? 'top' : ''}">
-              <div class="trip-total">${money(t.total, cur)}${i === 0 ? '<span class="tag">Best</span>' : ''}</div>
-              <div class="trip-legs">${flightRow(t.outbound, cur)}${flightRow(t.inbound, cur)}</div>
+              <div class="trip-total">${money(t.total, cur)}${i === 0 ? `<span class="tag">${by === 'airports' ? 'Top pick' : 'Cheapest'}</span>` : ''}</div>
+              <div class="trip-legs">${flightRow(t.outbound, cur, req.outbound)}${flightRow(t.inbound, cur, req.inbound)}</div>
             </div>`,
             )
             .join('')}</div>`
       : '<div class="card"><h3>Best trips</h3><p class="muted">No outbound and return pair works with these settings.</p></div>';
   }
-  $('results').innerHTML = `${demo}${trips}<div class="legs-results">${legSection('Going out', data.outbound, cur)}${legSection('Coming home', data.inbound, cur)}</div>`;
-  $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  $('results').innerHTML = `${head}${demo}${trips}<div class="legs-results">${legSection('Going out', data.outbound, req.outbound, cur, by)}${req.inbound ? legSection('Coming home', data.inbound, req.inbound, cur, by) : ''}</div>`;
 }
+
+$('results').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sort]');
+  if (!b || !state.last) return;
+  prefs = { ...prefs, sort: b.dataset.sort };
+  savePrefs(prefs);
+  renderResults(state.last.data, state.last.req);
+  $('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 loadFixtures();

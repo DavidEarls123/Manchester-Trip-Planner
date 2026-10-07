@@ -26,14 +26,27 @@
     <!-- Settings -->
     <section id="settings" class="card hidden">
       <h2>My preferences</h2>
-      <p class="muted">Saved in this browser. These are pre-filled on every search, and you can change them per trip.</p>
+      <p class="muted">Saved on this device and used for every search. Put your favourite airport first. Results can be sorted by this order, and you can still leave an airport out of any single search.</p>
+      <div class="pref-lists">
+        <div class="pref-list">
+          <h3>Airports I fly from</h3>
+          <ol class="ap-edit" id="pref-from-list"></ol>
+          <div class="ap-add">
+            <input id="pref-from-add" placeholder="Add code, e.g. DUB" maxlength="3" aria-label="Add an airport I fly from" />
+            <button type="button" data-add="pref-from">Add</button>
+          </div>
+        </div>
+        <div class="pref-list">
+          <h3>Airports I fly into for Old Trafford</h3>
+          <ol class="ap-edit" id="pref-to-list"></ol>
+          <div class="ap-add">
+            <input id="pref-to-add" placeholder="Add code, e.g. LPL" maxlength="3" aria-label="Add an airport I fly into" />
+            <button type="button" data-add="pref-to">Add</button>
+          </div>
+          <p class="muted small">Away games use the airports nearest each ground, closest first.</p>
+        </div>
+      </div>
       <div class="grid2">
-        <label>Home airport(s) — where you fly from
-          <input id="pref-home" placeholder="e.g. DUB or DUB,ORK" />
-        </label>
-        <label>Preferred airport(s) for Old Trafford
-          <input id="pref-man" placeholder="e.g. MAN or MAN,LPL" />
-        </label>
         <label>Currency
           <select id="pref-currency">
             <option>GBP</option><option>EUR</option><option>USD</option>
@@ -73,7 +86,7 @@
         <label>Match / event name <input id="custom-name" placeholder="e.g. Europa League away" /></label>
         <label>Match date <input id="custom-date" type="date" /></label>
         <label>Kick-off (UK time, optional) <input id="custom-time" type="time" /></label>
-        <label>Nearest airport(s) <input id="custom-airports" placeholder="e.g. MAN" /></label>
+        <label>Nearest airport(s), best first <input id="custom-airports" placeholder="e.g. MAN, LPL" /></label>
       </div>
 
       <div class="legs">
@@ -82,8 +95,8 @@
           <div class="field-label">Day(s) to fly <span class="muted">(select one or more)</span></div>
           <div class="chips" id="out-dates"></div>
           <div class="grid2">
-            <label>From <input id="out-from" /></label>
-            <label>To <input id="out-to" /><span class="chips mini" id="out-to-suggest"></span></label>
+            <div class="ap-field"><div class="field-label">From</div><div class="ap-chips" id="out-from"></div></div>
+            <div class="ap-field"><div class="field-label">To</div><div class="ap-chips" id="out-to"></div></div>
             <label>Depart after <input id="out-depart-after" type="time" /></label>
             <label>Depart before <input id="out-depart-before" type="time" /></label>
             <label>Arrive after <input id="out-arrive-after" type="time" /></label>
@@ -101,14 +114,14 @@
             <div class="field-label">Day(s) to fly <span class="muted">(select one or more)</span></div>
             <div class="chips" id="ret-dates"></div>
             <div class="grid2">
-              <label>From
-                <input id="ret-from" />
-                <span class="check small"><input type="checkbox" id="ret-from-same" checked /> same airport I flew into</span>
-              </label>
-              <label>To
-                <input id="ret-to" />
-                <span class="check small"><input type="checkbox" id="ret-to-same" checked /> same airport I flew out of</span>
-              </label>
+              <div class="ap-field"><div class="field-label">From</div>
+                <div class="ap-chips" id="ret-from"></div>
+                <label class="check small"><input type="checkbox" id="ret-from-same" checked /> same airports I flew into</label>
+              </div>
+              <div class="ap-field"><div class="field-label">To</div>
+                <div class="ap-chips" id="ret-to"></div>
+                <label class="check small"><input type="checkbox" id="ret-to-same" checked /> same airports I flew out of</label>
+              </div>
               <label>Depart after <input id="ret-depart-after" type="time" /></label>
               <label>Depart before <input id="ret-depart-before" type="time" /></label>
               <label>Arrive after <input id="ret-arrive-after" type="time" /></label>
@@ -130,7 +143,7 @@
         <button type="submit" id="search-btn" class="primary">Find flights</button>
       </div>
       <p class="notice" id="notice" role="status" hidden></p>
-      <p class="muted small" id="search-cost"></p>
+      <p class="muted small" id="search-cost">Tap an airport to leave it out of this search.</p>
     </form>
 
     <!-- Step 3: results -->

@@ -10,7 +10,8 @@ A small personal web app for planning flights to Manchester United games.
 
 ## Features
 
-- **Your airports, saved.** Set your home airport(s) and preferred airport(s) for Old Trafford once (⚙ My airports). They're pre-filled on every search, and you can override them per trip.
+- **Your airports, in your order.** Under ⚙ My airports, keep two ranked lists: airports you fly from, and airports you fly into for Old Trafford. Reorder them with ↑ ↓, remove with ✕, add with a code. They're saved on the device and used for every search. On any single trip, tap an airport to leave it out, or add one just for that trip.
+- **Sort by your airports or by price.** "My airport order" lists your favourite airports first, then cheapest. "Cheapest" ignores airport order. In airport order, a tip tells you when a lower-ranked airport would save money, and by how much.
 - **Same airport or not.** By default the return flies from the airport you flew into, back to the airport you left from. Untick either box to fly home from somewhere else (for example, into MAN and out of LPL) or to land at a different home airport.
 - **Away games.** Each away ground suggests its nearest airports (Newcastle → NCL, Chelsea → LHR/LGW/LCY, …). Click the chips to add or remove them.
 - **Time windows.** Each direction has depart after/before and arrive after/by.

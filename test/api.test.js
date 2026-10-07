@@ -30,7 +30,8 @@ test('Vercel search function returns trips and rejects GET', async () => {
   const res = mockRes();
   await handler({ method: 'POST', headers: {}, body }, res);
   assert.equal(res.statusCode, 200);
-  assert.ok(res.body.trips.length > 0);
+  assert.ok(res.body.trips.price.length > 0);
+  assert.ok(res.body.trips.airports.length > 0);
   const res2 = mockRes();
   await handler({ method: 'GET', headers: {} }, res2);
   assert.equal(res2.statusCode, 405);

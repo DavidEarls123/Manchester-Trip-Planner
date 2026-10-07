@@ -70,3 +70,23 @@ test('live search maps SerpApi response', async () => {
   assert.deepEqual(r.flights.map((f) => [f.flightNumbers[0], f.price, f.departTime]), [['FR 552', 45, '13:00'], ['EI 202', 89, '07:05']]);
   assert.equal(r.link, 'https://g.co/x');
 });
+
+test('airportRank follows list order, unknown airports last', async () => {
+  const { airportRank } = await import('../lib/flights.js');
+  const from = ['DUB', 'ORK'];
+  const to = ['MAN', 'LPL', 'LBA'];
+  assert.equal(airportRank(flight({ from: 'DUB', to: 'MAN' }), from, to), 0);
+  assert.equal(airportRank(flight({ from: 'ORK', to: 'MAN' }), from, to), 1);
+  assert.equal(airportRank(flight({ from: 'DUB', to: 'LBA' }), from, to), 2);
+  assert.equal(airportRank(flight({ from: 'SNN', to: 'LPL' }), from, to), 3);
+});
+
+test('combineTrips by airports puts preferred airports first, by price cheapest first', () => {
+  const out = [
+    flight({ from: 'DUB', to: 'MAN', price: 120, rank: 0, flightNumbers: ['PREF'] }),
+    flight({ from: 'DUB', to: 'LPL', price: 30, rank: 1, flightNumbers: ['CHEAP'] }),
+  ];
+  const ret = [flight({ from: 'MAN', to: 'DUB', date: '2026-10-11', price: 40, rank: 0 })];
+  assert.equal(combineTrips(out, ret, 10, 'airports')[0].outbound.flightNumbers[0], 'PREF');
+  assert.equal(combineTrips(out, ret, 10, 'price')[0].outbound.flightNumbers[0], 'CHEAP');
+});
