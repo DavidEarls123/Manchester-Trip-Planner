@@ -293,7 +293,7 @@ document.querySelectorAll('[data-clear]').forEach((b) => (b.onclick = () => clea
 // "Land in time for kick-off": fly on matchday, land at least N hours before KO.
 $('out-ko').onclick = () => {
   const ko = toMin(state.fixture.time);
-  if (ko == null) return alert('Kick-off time is not confirmed yet.');
+  if (ko == null) return notice('Kick-off time is not confirmed yet, so set the times yourself.');
   restoreChips('out-dates', [state.fixture.date]);
   $('out-arrive-by').value = hm(Math.max(0, ko - prefs.before * 60));
   updateCost();
@@ -301,13 +301,23 @@ $('out-ko').onclick = () => {
 // "Leave after full time": fly home on matchday, departing N hours after KO.
 $('ret-ft').onclick = () => {
   const ko = toMin(state.fixture.time);
-  if (ko == null) return alert('Kick-off time is not confirmed yet.');
+  if (ko == null) return notice('Kick-off time is not confirmed yet, so set the times yourself.');
   const after = ko + prefs.after * 60;
-  if (after >= 1440) return alert('That would be after midnight. Pick the day after instead.');
+  if (after >= 1440) return notice('That would be after midnight. Pick the day after instead.');
   restoreChips('ret-dates', [state.fixture.date]);
   $('ret-depart-after').value = hm(after);
   updateCost();
 };
+
+// Inline message under the search button (alert() is blocked in some views).
+let noticeTimer;
+function notice(msg) {
+  const el = $('notice');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => (el.hidden = true), 6000);
+}
 
 function updateCost() {
   const n = selectedDates('out-dates').length + ($('ret-on').checked ? selectedDates('ret-dates').length : 0);
@@ -383,7 +393,8 @@ $('trip').onsubmit = async (e) => {
     currency: $('currency').value,
   };
   if (!body.outbound.from.length) {
-    alert('Set your home airport first (⚙ My airports), or type one in "From".');
+    notice('Set your home airport first (⚙ My airports), or type one in "From".');
+    $('out-from').focus();
     return;
   }
   const btn = $('search-btn');
@@ -441,7 +452,7 @@ function legSection(title, leg, cur, limit = 12) {
 function renderResults(data, req) {
   state.currency = data.currency;
   const cur = data.currency;
-  const demo = data.mode === 'demo' ? '<div class="card warn">Demo mode: these prices are made up. Add a free SerpApi key to <code>.env</code> to get real Google Flights prices.</div>' : '';
+  const demo = data.mode === 'demo' ? '<div class="card warn">Demo mode: these prices are made up. Add your SerpApi key as <code>SERPAPI_KEY</code> to get real Google Flights prices.</div>' : '';
   let trips = '';
   if (req.inbound) {
     trips = data.trips.length
