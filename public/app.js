@@ -29,7 +29,191 @@ const AIRPORT_NAMES = {
   ZRH: 'Zurich', GVA: 'Geneva', VIE: 'Vienna', WAW: 'Warsaw', KRK: 'Krakow', PRG: 'Prague', BUD: 'Budapest',
   ATH: 'Athens', IST: 'Istanbul', JFK: 'New York JFK', EWR: 'Newark', BOS: 'Boston', ORD: 'Chicago',
 };
-const apName = (c) => AIRPORT_NAMES[c] || '';
+const apName = (c) => AIRPORT_NAMES[c] || AIRPORTS_BY_CODE.get(c)?.name || '';
+
+// ---------- airport search by name, city, country or code ----------
+
+let AIRPORTS = null; // [{ code, name, city, country, ... }], loaded on first use
+let AIRPORTS_BY_CODE = new Map();
+let airportsLoading = null;
+
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+function loadAirports() {
+  airportsLoading ??= fetch('airports.json')
+    .then((r) => r.json())
+    .then((list) => {
+      AIRPORTS = list.map(([code, name, city, country]) => ({
+        code, name, city, country, n: norm(name), c: norm(city), k: norm(country),
+      }));
+      AIRPORTS_BY_CODE = new Map(AIRPORTS.map((a) => [a.code, a]));
+      return AIRPORTS;
+    })
+    .catch(() => {
+      airportsLoading = null; // try again next time
+      return [];
+    });
+  return airportsLoading;
+}
+
+// Best matches first: exact code, then name, city, any word, country.
+// UK and Irish airports get a head start, then big airports win ties.
+const NEARBY = new Set(['United Kingdom', 'Ireland', 'Isle of Man', 'Jersey', 'Guernsey']);
+function findAirports(query, limit = 8) {
+  const q = norm(query).trim();
+  if (!q || !AIRPORTS) return [];
+  const hits = [];
+  AIRPORTS.forEach((a, i) => {
+    let score;
+    if (a.code.toLowerCase() === q) score = 0;
+    else if (a.n.startsWith(q)) score = 1;
+    else if (a.c.startsWith(q)) score = 2;
+    else if (` ${a.n} ${a.c}`.includes(` ${q}`)) score = 3;
+    else if (a.k.startsWith(q)) score = 4;
+    else if (a.n.includes(q) || a.c.includes(q)) score = 5;
+    else return;
+    if (NEARBY.has(a.country)) score -= 3;
+    hits.push([score, NEARBY.has(a.country) ? 0 : 1, i, a]);
+  });
+  hits.sort((x, y) => x[0] - y[0] || x[1] - y[1] || x[2] - y[2]);
+  return hits.slice(0, limit).map((h) => h[3]);
+}
+
+// A search box: <div class="ap-search"><input class="ap-find" data-target="..."><ul class="ap-menu"></ul></div>
+function airportSearchBox(target, placeholder, label) {
+  return `<div class="ap-search">
+    <input class="ap-find" data-target="${target}" placeholder="${esc(placeholder)}" aria-label="${esc(label)}"
+      autocomplete="off" autocapitalize="words" spellcheck="false" role="combobox" aria-expanded="false" aria-autocomplete="list" />
+    <ul class="ap-menu" role="listbox" hidden></ul>
+  </div>`;
+}
+
+function renderMenu(input) {
+  const menu = input.nextElementSibling;
+  const q = input.value.trim();
+  const list = findAirports(q);
+  input._matches = list;
+  input._active = list.length ? 0 : -1;
+  if (!q) return closeMenu(input);
+  menu.innerHTML = list.length
+    ? list
+        .map(
+          (a, i) => `<li role="option" data-code="${a.code}" class="${i === 0 ? 'active' : ''}" aria-selected="${i === 0}">
+            <span><b>${esc(a.name)}</b><small>${esc([a.city.split(/[,(]/)[0].trim(), a.country].filter(Boolean).join(', '))}</small></span>
+            <span class="code">${a.code}</span></li>`,
+        )
+        .join('')
+    : `<li class="none">${AIRPORTS ? 'No airport found. Try the city or a 3-letter code.' : 'Loading airports…'}</li>`;
+  menu.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+  // Keep the menu on screen when the box sits near the right edge (phones).
+  menu.style.left = '0px';
+  const r = menu.getBoundingClientRect();
+  const over = r.right - (document.documentElement.clientWidth - 8);
+  if (over > 0) menu.style.left = `${-over}px`;
+}
+
+function closeMenu(input) {
+  const menu = input.nextElementSibling;
+  if (menu) menu.hidden = true;
+  input.setAttribute('aria-expanded', 'false');
+}
+
+function setActive(input, i) {
+  const items = [...input.nextElementSibling.querySelectorAll('li[data-code]')];
+  if (!items.length) return;
+  input._active = (i + items.length) % items.length;
+  items.forEach((li, j) => {
+    li.classList.toggle('active', j === input._active);
+    li.setAttribute('aria-selected', j === input._active);
+  });
+  items[input._active].scrollIntoView({ block: 'nearest' });
+}
+
+function pickAirport(input, code) {
+  const target = input.dataset.target;
+  input.value = '';
+  closeMenu(input);
+  addAirport(target, code);
+}
+
+// Adds to a settings list ("pref-from"/"pref-to") or to this trip's chips ("out-from", ...).
+function addAirport(target, code) {
+  if (target.startsWith('pref-')) {
+    const which = target.slice(5);
+    if (!state.draft[which].includes(code)) state.draft[which].push(code);
+    renderPrefList(which);
+    $(`pref-${which}-add`).querySelector('.ap-find').focus();
+    return;
+  }
+  const list = state.ap[target];
+  const hit = list.find((x) => x.code === code);
+  hit ? (hit.on = true) : list.push({ code, on: true });
+  renderAirports();
+  $(target).querySelector('.ap-find')?.focus();
+}
+
+document.addEventListener('focusin', (e) => {
+  if (e.target.matches?.('.ap-find')) loadAirports().then(() => e.target.value && renderMenu(e.target));
+});
+document.addEventListener('input', (e) => {
+  if (e.target.matches('.ap-find')) renderMenu(e.target);
+});
+document.addEventListener('keydown', (e) => {
+  const input = e.target;
+  if (!input.matches?.('.ap-find')) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    setActive(input, (input._active ?? -1) + (e.key === 'ArrowDown' ? 1 : -1));
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const match = input._matches?.[input._active];
+    const typed = codes(input.value)[0];
+    if (match) pickAirport(input, match.code);
+    else if (typed && input.value.trim().length === 3) pickAirport(input, typed);
+  } else if (e.key === 'Escape') {
+    closeMenu(input);
+  }
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target.matches?.('.ap-find')) setTimeout(() => closeMenu(e.target), 150);
+});
+// mousedown (not click) so the input keeps focus while choosing.
+document.addEventListener('mousedown', (e) => {
+  const li = e.target.closest?.('.ap-menu li[data-code]');
+  if (!li) return;
+  e.preventDefault();
+  pickAirport(li.closest('.ap-search').querySelector('.ap-find'), li.dataset.code);
+});
+
+// ---------- helpers ----------
+
+const codes = (s) => [...new Set(String(s || '').toUpperCase().split(/[\s,]+/).filter((c) => /^[A-Z]{3}$/.test(c)))];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+function addDays(iso, n) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function niceDate(iso, opts = { weekday: 'short', day: 'numeric', month: 'short' }) {
+  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
+}
+function hm(mins) {
+  const m = ((Math.round(mins) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+function toMin(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+function dur(mins) {
+  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+}
+function money(n, cur) {
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n);
+}
+const today = () => new Date().toISOString().slice(0, 10);
 
 // ---------- prefs ----------
 
@@ -71,10 +255,8 @@ $('settings-btn').onclick = () => {
   $('settings').classList.toggle('hidden');
 };
 $('settings-save').onclick = () => {
-  addFromInput('from');
-  addFromInput('to');
   if (!state.draft.from.length) {
-    $('pref-from-add').focus();
+    $('pref-from-add').querySelector('.ap-find').focus();
     return;
   }
   prefs = {
@@ -135,50 +317,12 @@ for (const which of ['from', 'to']) {
     }
     renderPrefList(which);
   };
-  $(`pref-${which}-add`).addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addFromInput(which);
-    }
-  });
+  $(`pref-${which}-add`).innerHTML = airportSearchBox(
+    `pref-${which}`,
+    which === 'from' ? 'Add an airport, e.g. Dublin' : 'Add an airport, e.g. Liverpool',
+    which === 'from' ? 'Add an airport I fly from' : 'Add an airport I fly into',
+  );
 }
-document.querySelectorAll('[data-add]').forEach((b) => (b.onclick = () => addFromInput(b.dataset.add.replace('pref-', ''))));
-
-function addFromInput(which) {
-  const input = $(`pref-${which}-add`);
-  for (const c of codes(input.value)) if (!state.draft[which].includes(c)) state.draft[which].push(c);
-  input.value = '';
-  renderPrefList(which);
-}
-
-// ---------- helpers ----------
-
-const codes = (s) => [...new Set(String(s || '').toUpperCase().split(/[\s,]+/).filter((c) => /^[A-Z]{3}$/.test(c)))];
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-
-function addDays(iso, n) {
-  const d = new Date(`${iso}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-function niceDate(iso, opts = { weekday: 'short', day: 'numeric', month: 'short' }) {
-  return new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { ...opts, timeZone: 'UTC' });
-}
-function hm(mins) {
-  const m = ((Math.round(mins) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-}
-function toMin(t) {
-  const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
-  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-}
-function dur(mins) {
-  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
-}
-function money(n, cur) {
-  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(n);
-}
-const today = () => new Date().toISOString().slice(0, 10);
 
 // ---------- fixtures ----------
 
@@ -244,13 +388,11 @@ $('custom-trip').onclick = () => {
   $('custom-name').value = '';
   $('custom-date').value = date;
   $('custom-time').value = '';
-  $('custom-airports').value = prefs.to.join(', ');
   openTrip(customFixture());
 };
 
 function customFixture() {
   const date = $('custom-date').value || addDays(today(), 7);
-  const airports = codes($('custom-airports').value);
   return {
     id: 'custom',
     custom: true,
@@ -260,16 +402,14 @@ function customFixture() {
     isHome: false,
     venue: '',
     city: '',
-    airports: airports.length ? airports : [...prefs.to],
+    airports: [...prefs.to],
   };
 }
-['custom-name', 'custom-date', 'custom-time', 'custom-airports'].forEach((id) =>
+['custom-name', 'custom-date', 'custom-time'].forEach((id) =>
   $(id).addEventListener('change', () => {
     state.fixture = customFixture();
     renderDates(true);
     renderSummary();
-    state.ap['out-to'] = chipList(state.fixture.airports);
-    renderAirports();
   }),
 );
 
@@ -341,7 +481,7 @@ function renderAirports() {
       .join('');
     const add = mirrored
       ? ''
-      : `<input class="ap-plus" data-for="${id}" maxlength="3" placeholder="+ add" aria-label="Add an airport for this trip" />`;
+      : airportSearchBox(id, '+ Add airport', 'Add an airport for this trip');
     $(id).innerHTML = chips + add;
   }
 }
@@ -354,22 +494,6 @@ for (const id of ['out-from', 'out-to', 'ret-from', 'ret-to']) {
     if (a.on && state.ap[id].filter((x) => x.on).length === 1) return notice('Keep at least one airport selected.');
     a.on = !a.on;
     renderAirports();
-  });
-  const addTyped = (input) => {
-    const list = state.ap[id];
-    for (const c of codes(input.value)) {
-      const hit = list.find((x) => x.code === c);
-      hit ? (hit.on = true) : list.push({ code: c, on: true });
-    }
-    renderAirports();
-  };
-  $(id).addEventListener('change', (e) => e.target.matches('.ap-plus') && addTyped(e.target));
-  $(id).addEventListener('keydown', (e) => {
-    if (e.target.matches('.ap-plus') && e.key === 'Enter') {
-      e.preventDefault();
-      addTyped(e.target);
-      $(id).querySelector('.ap-plus')?.focus();
-    }
   });
 }
 
@@ -533,8 +657,8 @@ $('trip').onsubmit = async (e) => {
     currency: $('currency').value,
   };
   if (!body.outbound.from.length) {
-    notice('Add the airport you fly from: tap ⚙ My airports, or type a code in "+ add" under From.');
-    $('out-from').querySelector('.ap-plus')?.focus();
+    notice('Add the airport you fly from: tap ⚙ My airports, or use "+ Add airport" under From.');
+    $('out-from').querySelector('.ap-find')?.focus();
     return;
   }
   const btn = $('search-btn');
@@ -659,3 +783,8 @@ $('results').addEventListener('click', (e) => {
 });
 
 loadFixtures();
+// Fetch airport names in the background so chips can show them.
+loadAirports().then(() => {
+  if (state.fixture) renderAirports();
+  if (!$('settings').classList.contains('hidden')) ['from', 'to'].forEach(renderPrefList);
+});

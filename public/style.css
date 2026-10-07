@@ -104,8 +104,6 @@ label.check, .check { flex-direction: row; align-items: center; gap: 6px; color:
 label.inline { display: inline-flex; font-weight: 600; font-size: 15px; }
 .inline-select { flex-direction: row; align-items: center; gap: 6px; color: var(--ink); }
 input, select { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; text-transform: none; }
-input:not([type=time]):not([type=date]):not([type=number]):not([type=checkbox]) { text-transform: uppercase; }
-#custom-name { text-transform: none !important; }
 input:disabled { opacity: .65; }
 input:focus, select:focus, button:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
 
@@ -160,8 +158,24 @@ details summary { cursor: pointer; color: var(--red); padding: 6px 0; font-size:
 .ap-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ap-btns { display: flex; gap: 4px; }
 button.icon { padding: 4px 9px; line-height: 1.2; }
-.ap-add { display: flex; gap: 6px; }
-.ap-add input { flex: 1; min-width: 0; }
+.ap-add .ap-search { width: 100%; }
+.ap-add .ap-find { width: 100%; }
+.ap-search { position: relative; }
+.ap-chips .ap-search .ap-find { width: 150px; padding: 5px 8px; font-size: 13px; }
+input.ap-find { text-transform: none; }
+.ap-menu {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0;
+  width: min(340px, calc(100vw - 32px)); max-height: 300px; overflow-y: auto;
+  margin: 0; padding: 4px; list-style: none;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.ap-menu li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; cursor: pointer; color: var(--ink); }
+.ap-menu li span:first-child { display: flex; flex-direction: column; min-width: 0; }
+.ap-menu li small { color: var(--muted); font-size: 12px; }
+.ap-menu li .code { font-weight: 700; font-size: 13px; padding: 2px 6px; border-radius: 5px; background: var(--chip); font-variant-numeric: tabular-nums; }
+.ap-menu li.active, .ap-menu li[data-code]:hover { background: color-mix(in srgb, var(--red) 12%, var(--card)); }
+.ap-menu li.none { cursor: default; color: var(--muted); }
 
 .ap-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ap-field .field-label { margin: 0; }
@@ -172,7 +186,6 @@ button.icon { padding: 4px 9px; line-height: 1.2; }
 .chip.ap:disabled { opacity: .7; cursor: default; }
 .ap-num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; background: var(--on-red); color: var(--red); }
 .chip.ap:not(.on) .ap-num { background: var(--chip); color: var(--ink); }
-input.ap-plus { width: 74px; padding: 5px 8px; font-size: 13px; }
 
 .results-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
 .results-head h2 { margin: 0; }

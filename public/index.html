@@ -31,18 +31,12 @@
         <div class="pref-list">
           <h3>Airports I fly from</h3>
           <ol class="ap-edit" id="pref-from-list"></ol>
-          <div class="ap-add">
-            <input id="pref-from-add" placeholder="Add code, e.g. DUB" maxlength="3" aria-label="Add an airport I fly from" />
-            <button type="button" data-add="pref-from">Add</button>
-          </div>
+          <div class="ap-add" id="pref-from-add"></div>
         </div>
         <div class="pref-list">
           <h3>Airports I fly into for Old Trafford</h3>
           <ol class="ap-edit" id="pref-to-list"></ol>
-          <div class="ap-add">
-            <input id="pref-to-add" placeholder="Add code, e.g. LPL" maxlength="3" aria-label="Add an airport I fly into" />
-            <button type="button" data-add="pref-to">Add</button>
-          </div>
+          <div class="ap-add" id="pref-to-add"></div>
           <p class="muted small">Away games use the airports nearest each ground, closest first.</p>
         </div>
       </div>
@@ -86,7 +80,6 @@
         <label>Match / event name <input id="custom-name" placeholder="e.g. Europa League away" /></label>
         <label>Match date <input id="custom-date" type="date" /></label>
         <label>Kick-off (UK time, optional) <input id="custom-time" type="time" /></label>
-        <label>Nearest airport(s), best first <input id="custom-airports" placeholder="e.g. MAN, LPL" /></label>
       </div>
 
       <div class="legs">
